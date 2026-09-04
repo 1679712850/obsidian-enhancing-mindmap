@@ -25,6 +25,7 @@ export default {
   "Font size desc":"思维导图文字默认大小，单位px",
   "Mind map layout direct":"思维导图布局方向",
   "Mind map layout direct desc":"思维导图的布局方向，分为向两侧发散、仅右侧、仅左侧三个方向",
+  "Focus all mindmap nodes":"聚焦全部节点",
 
   // wait to use
   "Expand node":"展开节点",

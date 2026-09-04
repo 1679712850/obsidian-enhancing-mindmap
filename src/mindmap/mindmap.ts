@@ -173,9 +173,10 @@ export default class MindMap {
     }
 
     setAppSetting() {
-        const minimumSize = this.getMinimumCanvasSize();
-        this.canvasWidth = Math.max(this.canvasWidth || 0, minimumSize);
-        this.canvasHeight = Math.max(this.canvasHeight || 0, minimumSize);
+        // The configured size is used only until the first layout. Afterwards
+        // the canvas is sized to the map's outer bounds.
+        this.canvasWidth = Math.max(1, this.canvasWidth || this.getMinimumCanvasSize());
+        this.canvasHeight = Math.max(1, this.canvasHeight || this.getMinimumCanvasSize());
         this.applyCanvasSize();
         //  this.contentEL.style.color=`${this.setting.color};`;
         this.contentEL.style.background = `${this.setting.background}`;
@@ -2147,19 +2148,15 @@ export default class MindMap {
         return nodes;
     }
 
-    /**
-     * Grow and, when needed, rebase the layout before any node or SVG path can
-     * reach an edge.  Keeping a generous margin makes the canvas effectively
-     * unbounded while preserving the existing scroll-based interaction model.
-     */
+    /** Keep the canvas tight around the outermost visible nodes and links. */
     ensureCanvasBounds() {
         const nodes = this.getVisibleNodes();
         if (!nodes.length) return;
 
-        const margin = Math.max(240, Math.min(800, this.containerEL.clientWidth || 0, this.containerEL.clientHeight || 0));
+        const margin = 120;
         let bounds = this.getBoundingRect(nodes);
-        const shiftX = Math.max(0, margin - bounds.x);
-        const shiftY = Math.max(0, margin - bounds.y);
+        const shiftX = margin - bounds.x;
+        const shiftY = margin - bounds.y;
 
         if (shiftX || shiftY) {
             const rootPosition = this.root.getPosition();
@@ -2172,10 +2169,8 @@ export default class MindMap {
             bounds = this.getBoundingRect(nodes);
         }
 
-        const requiredWidth = Math.ceil(bounds.right + margin);
-        const requiredHeight = Math.ceil(bounds.bottom + margin);
-        const width = Math.max(this.canvasWidth, this.getMinimumCanvasSize(), requiredWidth);
-        const height = Math.max(this.canvasHeight, this.getMinimumCanvasSize(), requiredHeight);
+        const width = Math.ceil(bounds.width + margin * 2);
+        const height = Math.ceil(bounds.height + margin * 2);
         if (width !== this.canvasWidth || height !== this.canvasHeight) {
             this.canvasWidth = width;
             this.canvasHeight = height;
@@ -2257,8 +2252,8 @@ export default class MindMap {
 
         var w = this.containerEL.clientWidth;
         var h = this.containerEL.clientHeight;
-        this.containerEL.scrollTop = this.setting.canvasSize / 2 - h / 2 - 60;
-        this.containerEL.scrollLeft = this.setting.canvasSize / 2 - w / 2 + 30;
+        this.containerEL.scrollTop = this.canvasHeight / 2 - h / 2 - 60;
+        this.containerEL.scrollLeft = this.canvasWidth / 2 - w / 2 + 30;
 
         this.scale(oldScale);
     }

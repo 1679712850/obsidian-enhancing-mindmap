@@ -1047,6 +1047,26 @@ export default class MindMapPlugin extends Plugin {
       }
     });
 
+    // F
+    this.addCommand({
+      id: 'Focus all mindmap nodes',
+      name: `${t('Focus all mindmap nodes')}`,
+      hotkeys: [
+        {
+          modifiers: [],
+          key: 'F',
+        },
+      ],
+      checkCallback: (checking: boolean) => {
+        const mindmapView = this.app.workspace.getActiveViewOfType(MindMapView);
+        if (!mindmapView?.mindmap) return false;
+        if (!checking) {
+          mindmapView.mindmap.focusAll();
+        }
+        return true;
+      }
+    });
+
     // Zoom in
     this.addCommand({
       id: 'Zoom in',

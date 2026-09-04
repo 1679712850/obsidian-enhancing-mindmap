@@ -179,6 +179,9 @@ var en = {
     'Join as citation with the node below': 'Join as citation with the node below',
     'Center mindmap view on the current node': 'Center mindmap view on the current node',
     'Center mindmap view': 'Center mindmap view',
+    'Focus all mindmap nodes': 'Focus all mindmap nodes',
+    'Zoom in': 'Zoom in',
+    'Zoom out': 'Zoom out',
     'Display the node\'s info in console': 'Display the node\'s info in console',
     "Export to html": "Export to html",
     "Export to PNG": "Export to PNG",
@@ -336,6 +339,7 @@ var zhCN = {
     "Font size desc": "思维导图文字默认大小，单位px",
     "Mind map layout direct": "思维导图布局方向",
     "Mind map layout direct desc": "思维导图的布局方向，分为向两侧发散、仅右侧、仅左侧三个方向",
+    "Focus all mindmap nodes": "聚焦全部节点",
     // wait to use
     "Expand node": "展开节点",
     "Collapse node": "收缩节点",
@@ -8510,9 +8514,10 @@ class MindMap {
         this._menuDom.appendChild(deleteNodeDom);
     }
     setAppSetting() {
-        const minimumSize = this.getMinimumCanvasSize();
-        this.canvasWidth = Math.max(this.canvasWidth || 0, minimumSize);
-        this.canvasHeight = Math.max(this.canvasHeight || 0, minimumSize);
+        // The configured size is used only until the first layout. Afterwards
+        // the canvas is sized to the map's outer bounds.
+        this.canvasWidth = Math.max(1, this.canvasWidth || this.getMinimumCanvasSize());
+        this.canvasHeight = Math.max(1, this.canvasHeight || this.getMinimumCanvasSize());
         this.applyCanvasSize();
         //  this.contentEL.style.color=`${this.setting.color};`;
         this.contentEL.style.background = `${this.setting.background}`;
@@ -10036,20 +10041,16 @@ class MindMap {
         });
         return nodes;
     }
-    /**
-     * Grow and, when needed, rebase the layout before any node or SVG path can
-     * reach an edge.  Keeping a generous margin makes the canvas effectively
-     * unbounded while preserving the existing scroll-based interaction model.
-     */
+    /** Keep the canvas tight around the outermost visible nodes and links. */
     ensureCanvasBounds() {
         var _a;
         const nodes = this.getVisibleNodes();
         if (!nodes.length)
             return;
-        const margin = Math.max(240, Math.min(800, this.containerEL.clientWidth || 0, this.containerEL.clientHeight || 0));
+        const margin = 120;
         let bounds = this.getBoundingRect(nodes);
-        const shiftX = Math.max(0, margin - bounds.x);
-        const shiftY = Math.max(0, margin - bounds.y);
+        const shiftX = margin - bounds.x;
+        const shiftY = margin - bounds.y;
         if (shiftX || shiftY) {
             const rootPosition = this.root.getPosition();
             this.root.setPosition(rootPosition.x + shiftX, rootPosition.y + shiftY);
@@ -10060,10 +10061,8 @@ class MindMap {
             this.containerEL.scrollTop += shiftY * (this.mindScale / 100);
             bounds = this.getBoundingRect(nodes);
         }
-        const requiredWidth = Math.ceil(bounds.right + margin);
-        const requiredHeight = Math.ceil(bounds.bottom + margin);
-        const width = Math.max(this.canvasWidth, this.getMinimumCanvasSize(), requiredWidth);
-        const height = Math.max(this.canvasHeight, this.getMinimumCanvasSize(), requiredHeight);
+        const width = Math.ceil(bounds.width + margin * 2);
+        const height = Math.ceil(bounds.height + margin * 2);
         if (width !== this.canvasWidth || height !== this.canvasHeight) {
             this.canvasWidth = width;
             this.canvasHeight = height;
@@ -10127,8 +10126,8 @@ class MindMap {
         this.scale(100);
         var w = this.containerEL.clientWidth;
         var h = this.containerEL.clientHeight;
-        this.containerEL.scrollTop = this.setting.canvasSize / 2 - h / 2 - 60;
-        this.containerEL.scrollLeft = this.setting.canvasSize / 2 - w / 2 + 30;
+        this.containerEL.scrollTop = this.canvasHeight / 2 - h / 2 - 60;
+        this.containerEL.scrollLeft = this.canvasWidth / 2 - w / 2 + 30;
         this.scale(oldScale);
     }
     centerOnNode(node) {
@@ -40514,6 +40513,62 @@ class MindMapPlugin extends obsidian.Plugin {
                     if (mindmapView) {
                         var mindmap = mindmapView.mindmap;
                         mindmap.center();
+                    }
+                }
+            });
+            // F
+            this.addCommand({
+                id: 'Focus all mindmap nodes',
+                name: `${t('Focus all mindmap nodes')}`,
+                hotkeys: [
+                    {
+                        modifiers: [],
+                        key: 'F',
+                    },
+                ],
+                checkCallback: (checking) => {
+                    const mindmapView = this.app.workspace.getActiveViewOfType(MindMapView);
+                    if (!(mindmapView === null || mindmapView === void 0 ? void 0 : mindmapView.mindmap))
+                        return false;
+                    if (!checking) {
+                        mindmapView.mindmap.focusAll();
+                    }
+                    return true;
+                }
+            });
+            // Zoom in
+            this.addCommand({
+                id: 'Zoom in',
+                name: `${t('Zoom in')}`,
+                hotkeys: [
+                    {
+                        modifiers: ['Alt'],
+                        key: '=',
+                    },
+                ],
+                callback: () => {
+                    const mindmapView = this.app.workspace.getActiveViewOfType(MindMapView);
+                    if (mindmapView) {
+                        var mindmap = mindmapView.mindmap;
+                        mindmap.setScale("up");
+                    }
+                }
+            });
+            // Zoom out
+            this.addCommand({
+                id: 'Zoom out',
+                name: `${t('Zoom out')}`,
+                hotkeys: [
+                    {
+                        modifiers: ['Alt'],
+                        key: '-',
+                    },
+                ],
+                callback: () => {
+                    const mindmapView = this.app.workspace.getActiveViewOfType(MindMapView);
+                    if (mindmapView) {
+                        var mindmap = mindmapView.mindmap;
+                        mindmap.setScale("down");
                     }
                 }
             });
