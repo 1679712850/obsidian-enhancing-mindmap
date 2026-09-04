@@ -8440,6 +8440,11 @@ class MindMap {
             headLevel: 2,
             layoutDirect: ''
         }, setting || {});
+        // The configured size is now only the initial/minimum size.  The
+        // canvas grows when a layout needs more room, so nodes and SVG paths
+        // never run into a fixed canvas edge.
+        this.canvasWidth = this.setting.canvasSize;
+        this.canvasHeight = this.setting.canvasSize;
         this.data = data;
         this.appEl = document.createElement('div');
         this.appEl.classList.add('mm-mindmap');
@@ -8505,13 +8510,24 @@ class MindMap {
         this._menuDom.appendChild(deleteNodeDom);
     }
     setAppSetting() {
-        this.appEl.style.width = `${this.setting.canvasSize}px`;
-        this.appEl.style.height = `${this.setting.canvasSize}px`;
-        this.contentEL.style.width = `100%`;
-        this.contentEL.style.height = `100%`;
+        const minimumSize = this.getMinimumCanvasSize();
+        this.canvasWidth = Math.max(this.canvasWidth || 0, minimumSize);
+        this.canvasHeight = Math.max(this.canvasHeight || 0, minimumSize);
+        this.applyCanvasSize();
         //  this.contentEL.style.color=`${this.setting.color};`;
         this.contentEL.style.background = `${this.setting.background}`;
         this.contentEL.style.fontSize = `${this.setting.fontSize}px`;
+    }
+    getMinimumCanvasSize() {
+        return Math.max(1, Number(this.setting.canvasSize) || 8000);
+    }
+    applyCanvasSize() {
+        var _a;
+        this.appEl.style.width = `${this.canvasWidth}px`;
+        this.appEl.style.height = `${this.canvasHeight}px`;
+        this.contentEL.style.width = `100%`;
+        this.contentEL.style.height = `100%`;
+        (_a = this.draw) === null || _a === void 0 ? void 0 : _a.size('100%', '100%');
     }
     //create node
     init(collapsedIds) {
@@ -8708,12 +8724,22 @@ class MindMap {
         this.isFocused = false;
     }
     appKeydown(e) {
+        var _a;
         if (!this.isFocused)
             return; // Check if Mindmap is in focus or not
-        e.keyCode || e.which || e.charCode;
-        e.ctrlKey || e.metaKey;
-        e.shiftKey;
-        e.altKey;
+        var keyCode = e.keyCode || e.which || e.charCode;
+        var ctrlKey = e.ctrlKey || e.metaKey;
+        var shiftKey = e.shiftKey;
+        var altKey = e.altKey;
+        // F: fit every visible node into the current viewport. Do not steal
+        // the key while a node is being edited or an IME composition is active.
+        if (!ctrlKey && !shiftKey && !altKey && !this.isComposing &&
+            !((_a = this.editNode) === null || _a === void 0 ? void 0 : _a.data.isEdit) && (keyCode == 70 || e.key.toLowerCase() == 'f')) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.focusAll();
+            return;
+        }
         // Shift + F2 : Edit as space does
         // if (!ctrlKey && shiftKey && !altKey) {  // SHIFT key
         //     if (keyCode == 113) {
@@ -9999,6 +10025,86 @@ class MindMap {
     }
     refresh() {
         this.layout();
+        this.ensureCanvasBounds();
+    }
+    getVisibleNodes() {
+        const nodes = [];
+        this.traverseDF((node) => {
+            if (node.isShow()) {
+                nodes.push(node);
+            }
+        });
+        return nodes;
+    }
+    /**
+     * Grow and, when needed, rebase the layout before any node or SVG path can
+     * reach an edge.  Keeping a generous margin makes the canvas effectively
+     * unbounded while preserving the existing scroll-based interaction model.
+     */
+    ensureCanvasBounds() {
+        var _a;
+        const nodes = this.getVisibleNodes();
+        if (!nodes.length)
+            return;
+        const margin = Math.max(240, Math.min(800, this.containerEL.clientWidth || 0, this.containerEL.clientHeight || 0));
+        let bounds = this.getBoundingRect(nodes);
+        const shiftX = Math.max(0, margin - bounds.x);
+        const shiftY = Math.max(0, margin - bounds.y);
+        if (shiftX || shiftY) {
+            const rootPosition = this.root.getPosition();
+            this.root.setPosition(rootPosition.x + shiftX, rootPosition.y + shiftY);
+            // Re-layout from the translated root so all descendants and links
+            // move by the same amount.
+            (_a = this.mmLayout) === null || _a === void 0 ? void 0 : _a.layout(this.root, this.setting.layoutDirect || this.mmLayout.direct || 'mind map');
+            this.containerEL.scrollLeft += shiftX * (this.mindScale / 100);
+            this.containerEL.scrollTop += shiftY * (this.mindScale / 100);
+            bounds = this.getBoundingRect(nodes);
+        }
+        const requiredWidth = Math.ceil(bounds.right + margin);
+        const requiredHeight = Math.ceil(bounds.bottom + margin);
+        const width = Math.max(this.canvasWidth, this.getMinimumCanvasSize(), requiredWidth);
+        const height = Math.max(this.canvasHeight, this.getMinimumCanvasSize(), requiredHeight);
+        if (width !== this.canvasWidth || height !== this.canvasHeight) {
+            this.canvasWidth = width;
+            this.canvasHeight = height;
+            this.applyCanvasSize();
+        }
+    }
+    /** Zoom and pan so the full visible map is centred in the viewport. */
+    focusAll() {
+        this.refresh();
+        const nodes = this.getVisibleNodes();
+        if (!nodes.length)
+            return;
+        const bounds = this.getBoundingRect(nodes);
+        const viewportWidth = this.containerEL.clientWidth;
+        const viewportHeight = this.containerEL.clientHeight;
+        if (!viewportWidth || !viewportHeight || !bounds.width || !bounds.height)
+            return;
+        const padding = Math.min(80, Math.max(16, Math.min(viewportWidth, viewportHeight) / 10));
+        const targetScale = Math.min(300, Math.max(0.1, Math.min((viewportWidth - padding * 2) / bounds.width, (viewportHeight - padding * 2) / bounds.height) * 100));
+        // A stable origin lets the centring calculation work regardless of the
+        // node last used as the mouse-wheel zoom origin.
+        this.scalePointer = [];
+        this.appEl.style.transformOrigin = '0 0';
+        this.scale(targetScale);
+        const centerInViewport = () => {
+            const viewport = this.containerEL.getBoundingClientRect();
+            let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+            nodes.forEach((node) => {
+                const rect = node.containEl.getBoundingClientRect();
+                left = Math.min(left, rect.left);
+                top = Math.min(top, rect.top);
+                right = Math.max(right, rect.right);
+                bottom = Math.max(bottom, rect.bottom);
+            });
+            this.containerEL.scrollLeft += (left + right - viewport.left - viewport.right) / 2;
+            this.containerEL.scrollTop += (top + bottom - viewport.top - viewport.bottom) / 2;
+        };
+        centerInViewport();
+        // Canvas resizing and CSS transforms update their scrollable bounds on
+        // the next frame in Obsidian's Chromium renderer.
+        requestAnimationFrame(centerInViewport);
     }
     emit(name, data) {
         var evt = new CustomEvent(name, {
@@ -10202,8 +10308,8 @@ class MindMap {
         return md.trim();
     }
     scale(num) {
-        if (num < 20) {
-            num = 20;
+        if (num < 0.1) {
+            num = 0.1;
         }
         if (num > 300) {
             num = 300;
@@ -39061,9 +39167,7 @@ class MindMapView extends obsidian.TextFileView {
         if (!this.mindmap) {
             return;
         }
-        var size = this.plugin.settings.canvasSize;
-        this.mindmap.contentEL.style.width = size + 'px';
-        this.mindmap.contentEL.style.height = size + 'px';
+        this.mindmap.applyCanvasSize();
         this.mindmap.containerEL.scrollTop = top;
         this.mindmap.containerEL.scrollLeft = left;
         this.mindmap.root.setPosition(rootBox.x, rootBox.y);
