@@ -1864,27 +1864,25 @@ export default class MindMap {
     }
 
     appMousewheel(evt: any) {
-        // if(!evt) evt = window.event;
         var ctrlKey = evt.ctrlKey || evt.metaKey;
-        var delta;
-        if (evt.wheelDelta) {
+        const target = evt.target as Node;
+        if (!ctrlKey || !target || !this.appEl.contains(target)) return;
+
+        var delta = 0;
+        if (typeof evt.wheelDelta === 'number') {
             //IE、chrome  -120
             delta = evt.wheelDelta / 120;
+        } else if (typeof evt.deltaY === 'number') {
+            delta = -evt.deltaY;
         } else if (evt.detail) {
             //FF 3
             delta = -evt.detail / 3;
         }
 
         if (delta) {
-            if (delta < 0) {
-                if (ctrlKey) {
-                    this.setScale("down");
-                }
-            } else {
-                if (ctrlKey) {
-                    this.setScale("up");
-                }
-            }
+            evt.preventDefault();
+            evt.stopPropagation();
+            this.setScaleAtPointer(delta < 0 ? "down" : "up", evt.clientX, evt.clientY);
         }
     }
 
@@ -2514,6 +2512,51 @@ export default class MindMap {
 
         this.timeOut = setTimeout(() => {
             new Notice(`${n} %`);
+        }, 600);
+    }
+
+    /** Keep the exact point below the cursor stationary while zooming. */
+    setScaleAtPointer(type: string, clientX: number, clientY: number) {
+        const oldScale = this.mindScale / 100;
+        const appRect = this.appEl.getBoundingClientRect();
+        if (!appRect.width || !appRect.height || !oldScale) {
+            this.setScale(type);
+            return;
+        }
+
+        const pointX = (clientX - appRect.left) / oldScale;
+        const pointY = (clientY - appRect.top) / oldScale;
+        const anchor = document.createElement('div');
+        anchor.style.position = 'absolute';
+        anchor.style.left = `${pointX}px`;
+        anchor.style.top = `${pointY}px`;
+        anchor.style.width = '0';
+        anchor.style.height = '0';
+        anchor.style.visibility = 'hidden';
+        anchor.style.pointerEvents = 'none';
+        this.contentEL.appendChild(anchor);
+
+        const nextScale = type == "up" ? this.mindScale + 10 : this.mindScale - 10;
+        this.scalePointer = [pointX, pointY];
+        this.scale(nextScale);
+
+        const keepAnchorUnderCursor = () => {
+            const anchorRect = anchor.getBoundingClientRect();
+            this.containerEL.scrollLeft += anchorRect.left - clientX;
+            this.containerEL.scrollTop += anchorRect.top - clientY;
+        };
+
+        keepAnchorUnderCursor();
+        requestAnimationFrame(() => {
+            keepAnchorUnderCursor();
+            anchor.remove();
+        });
+
+        if (this.timeOut) {
+            clearTimeout(this.timeOut);
+        }
+        this.timeOut = setTimeout(() => {
+            new Notice(`${this.mindScale} %`);
         }, 600);
     }
 
